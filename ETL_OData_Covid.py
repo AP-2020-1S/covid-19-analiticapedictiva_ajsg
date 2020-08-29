@@ -6,7 +6,10 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima_model import ARIMA
+from sklearn.metrics import mean_squared_error
 
+# model = ARIMA(test['casos_diff'], order=(5,1,0))
 # %%
 
 def extract_data(api_url, limit):
@@ -42,7 +45,7 @@ def data_transform(df, start_date):
     return df_in, df_dates
 
 def data_agg_col(df):
-    # Funcion para realizar agregaciones 
+    # Funcion para realizar agregaciones
     df['c_recuperado'] = df['atenci_n'].apply(lambda x : 1 if x == 'recuperado' else 0)
     df['c_fallecido'] = df['atenci_n'].apply(lambda x: 1 if x == 'fallecido' else 0)
     df['c_caso'] = 1
@@ -56,6 +59,41 @@ def data_agg_col(df):
     df_final = df_final.rename(columns={'id_de_caso':'total_casos','c_recuperado':'total_recuperados','c_fallecido':'total_fallecidos'})
     return df_casos, df_muertes, df_recuperados
 
+# evaluate an ARIMA model for a given order (p,d,q)
+def evaluate_arima_model(X, arima_order):
+    # prepare training dataset
+    train_size = int(len(X) * 0.66)
+    train, test = X[0:train_size], X[train_size:]
+    history = [x for x in train]
+    # make predictions
+    predictions = list()
+    for t in range(len(test)):
+        model = ARIMA(history, order=arima_order)
+        model_fit = model.fit(disp=0)
+        yhat = model_fit.forecast()[0]
+        predictions.append(yhat)
+        history.append(test[t])
+        # calculate out of sample error
+    error = mean_squared_error(test, predictions)
+    return error
+
+
+# evaluate combinations of p, d and q values for an ARIMA model
+def evaluate_models(dataset, p_values, d_values, q_values):
+    dataset = dataset.astype('float32')
+    best_score, best_cfg = float("inf"), None
+    for p in p_values:
+        for d in d_values:
+            for q in q_values:
+                order = (p,d,q)
+                try:
+                    mse = evaluate_arima_model(dataset, order)
+                    if mse < best_score:
+                        best_score, best_cfg = mse, order
+                    print('ARIMA%s MSE=%.3f' % (order,mse))
+                except:
+                    continue
+    print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
 #def data_agg_main_cities(df, main_cities)
 
 '''from pandas import read_csv
@@ -88,7 +126,13 @@ def main():
     df_full['fallecidos_diff'] = (df_full['fallecidos_lag'] - df_full['c_fallecido']) / df_full['c_fallecido']
     df_full['recuperados_diff'] = (df_full['recuperados_lag'] - df_full['c_recuperado']) / df_full['c_recuperado']
     df_full = df_full.fillna(0)
-    plt.plot(df_full['fecha'],df_full['c_caso'])
+    df_entrenamiento = df_full[['fecha', 'casos_diff']].iloc[:int(round((len(df_full) * 0.8) - 1, 0))]
+    test = df_entrenamiento.set_index('fecha')
+    p_v = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    d_v = [0,1,2]
+    q_v = [0,1,2,3,4,5,6,7,8,9,10]
+    evaluate_models(test['casos_diff'],p_v,d_v,q_v)
+    #plt.plot(df_full['fecha'],df_full['c_caso'])
     # %%
 
 if __name__ == '__main__':
