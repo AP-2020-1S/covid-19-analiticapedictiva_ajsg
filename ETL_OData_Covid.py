@@ -42,6 +42,7 @@ def data_transform(df, start_date):
     df_in['fecha_de_notificaci_n'] = pd.to_datetime(df_in['fecha_de_notificaci_n'])
     df_in['fecha_de_muerte'] = pd.to_datetime(df_in['fecha_de_muerte'])
     df_in['fecha_recuperado'] = pd.to_datetime(df_in['fecha_recuperado'])
+    df_in['fecha_diagnostico'] = pd.to_datetime(df_in['fecha_diagnostico'])
     return df_in, df_dates
 
 def data_agg_col(df):
@@ -49,9 +50,9 @@ def data_agg_col(df):
     df['c_recuperado'] = df['atenci_n'].apply(lambda x : 1 if x == 'recuperado' else 0)
     df['c_fallecido'] = df['atenci_n'].apply(lambda x: 1 if x == 'fallecido' else 0)
     df['c_caso'] = 1
-    df_final = df.groupby(['fecha_de_notificaci_n'], as_index=False).agg({'id_de_caso': 'count', 'c_recuperado': 'sum', 'c_fallecido': 'sum'})
-    df_casos = df.groupby(['fecha_de_notificaci_n'], as_index=False)['c_caso'].sum()
-    df_casos = df_casos.rename(columns={'fecha_de_notificaci_n': 'fecha'})
+    df_final = df.groupby(['fecha_diagnostico'], as_index=False).agg({'id_de_caso': 'count', 'c_recuperado': 'sum', 'c_fallecido': 'sum'})
+    df_casos = df.groupby(['fecha_diagnostico'], as_index=False)['c_caso'].sum()
+    df_casos = df_casos.rename(columns={'fecha_diagnostico': 'fecha'})
     df_muertes = df.groupby(['fecha_de_muerte'], as_index=False)['c_fallecido'].sum()
     df_muertes = df_muertes.rename(columns={'fecha_de_muerte':'fecha'})
     df_recuperados = df.groupby(['fecha_recuperado'], as_index=False)['c_recuperado'].sum()
@@ -62,7 +63,7 @@ def data_agg_col(df):
 # evaluate an ARIMA model for a given order (p,d,q)
 def evaluate_arima_model(X, arima_order):
     # prepare training dataset
-    train_size = int(len(X) * 0.66)
+    train_size = int(len(X) * 0.8)
     train, test = X[0:train_size], X[train_size:]
     history = [x for x in train]
     # make predictions
@@ -126,12 +127,19 @@ def main():
     df_full['fallecidos_diff'] = (df_full['fallecidos_lag'] - df_full['c_fallecido']) / df_full['c_fallecido']
     df_full['recuperados_diff'] = (df_full['recuperados_lag'] - df_full['c_recuperado']) / df_full['c_recuperado']
     df_full = df_full.fillna(0)
+    df_full.drop(df_full.tail(2).index, inplace=True)
     df_entrenamiento = df_full[['fecha', 'casos_diff']].iloc[:int(round((len(df_full) * 0.8) - 1, 0))]
     test = df_entrenamiento.set_index('fecha')
-    p_v = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    #p_v = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    p_v = [0,10,15]
     d_v = [0,1,2]
-    q_v = [0,1,2,3,4,5,6,7,8,9,10]
-    evaluate_models(test['casos_diff'],p_v,d_v,q_v)
+    q_v = [0, 5, 10]
+    #q_v = [0,1,2,3,4,5,6,7,8,9,10]
+    #evaluate_models(test['casos_diff'],p_v,d_v,q_v)
+    error = evaluate_arima_model(test['casos_diff'], [5,0,0])
+    model = ARIMA(test['casos_diff'], order=(5, 0, 0))
+    model_fit = model.fit(disp=0)
+    yhat = model_fit.forecast(steps=15)[0]
     #plt.plot(df_full['fecha'],df_full['c_caso'])
     # %%
 
