@@ -112,27 +112,6 @@ def evaluate_models(dataset, p_values, d_values, q_values):
                 except:
                     continue
     print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
-#def data_agg_main_cities(df, main_cities)
-
-'''from pandas import read_csv
-from statsmodels.tsa.stattools import adfuller
-series = read_csv('daily-total-female-births.csv', header=0, index_col=0, squeeze=True)
-X = series.values
-result = adfuller(X)
-print('ADF Statistic: %f' % result[0])
-print('p-value: %f' % result[1])
-print('Critical Values:')
-for key, value in result[4].items():
-    print('\t%s: %.3f' % (key, value))'''
-
-
-# The SIR model differential equations.
-def deriv(y, t, N, beta, gamma):
-    S, I, R = y
-    dSdt = -beta * S * I / N
-    dIdt = beta * S * I / N - gamma * I
-    dRdt = gamma * I
-    return dSdt, dIdt, dRdt
 
 
 def data_prep_normalize(df_o):
@@ -190,15 +169,13 @@ def arima_model_imp(df, train_perc, pred_range, ranges_casos, ranges_recu, range
     yhat_largo_casos = model_fit_casos.forecast(steps=pred_range[1])[0]
     yhat_largo_recuperados = model_fit_recu.forecast(steps=pred_range[1])[0]
     yhat_largo_fallecidos = model_fit_fall.forecast(steps=pred_range[1])[0]
-    response = [
-        {'pronostico_corto_casos': yhat_corto_casos,
-         'pronostico_largo_casos': yhat_largo_casos},
-        {'pronostico_corto_recuperados': yhat_corto_recuperados,
-         'pronostico_largo_recuperados': yhat_largo_recuperados},
-        {'pronostico_corto_fallecidos': yhat_corto_fallecidos,
-         'pronostico_largo_fallecidos': yhat_largo_fallecidos},
-                ]
+    response = {
+        'pronostico_casos': {'corto_plazo': yhat_corto_casos, 'largo_plazo': yhat_largo_casos},
+        'pronostico_recuperados': {'corto_plazo': yhat_corto_recuperados, 'largo_plazo': yhat_largo_recuperados},
+        'pronostico_fallecidos': {'corto_plazo': yhat_corto_fallecidos, 'largo_plazo': yhat_largo_fallecidos}
+         }
     return response
+
 
 def error_calculation(df, train_perc,range_c, range_rec, range_fall):
     serie_casos = df.set_index('fecha')
@@ -216,7 +193,18 @@ def error_calculation(df, train_perc,range_c, range_rec, range_fall):
     return response
 
 
+def translate_prediction(last_value_base, y_pred):
+    temp_val = last_value_base
+    trans_values = []
+    for val in y_pred:
+        new_t_val = temp_val*(1 + val)
+        trans_values.append(new_t_val)
+        temp_val = new_t_val
+    return trans_values
+
 # %%
+
+
 def main():
     # %%
     api_url = "https://www.datos.gov.co/resource/gt2j-8ykr.json"
@@ -240,16 +228,17 @@ def main():
     # plt.plot(df_full['fecha'],df_full['casos_diff'])
     # Implementacion ARIMA
     # Bloque validacion del modelo y deteccion p, d, q optimo (Solo aplicar para re calibrar el modelo)
-    '''p = [0,2,4,6]
+    '''p = [0,1,3]
     d = [0,1]
-    q = [0,3,4,6]
+    q = [0,1,3]
     df_entrenamiento = df_norm_medellin[['fecha', 'fallecidos_diff']].iloc[:int(round((len(df_norm_medellin) * 0.8) - 1, 0))]
     test = df_norm_cali.set_index('fecha')
     evaluate_models(test['casos_diff'], p, d, q)'''
     ###
-    # Colombia casos [0, 0, 2] MSE=0.087
-    # Colombia Recuperados [0, 0, 2] MSE=0.059
-    # Colombia Fallecidos [6, 1, 2] MSE=0.009
+    # Colombia casos [4, 0, 0] MSE=0.082
+    # Colombia Recuperados [1, 0, 3] MSE=0.024
+    # Colombia Fallecidos [1, 1, 3] MSE=0.007
+
     # Medellin casos [4, 1, 2] MSE=0.065
     # Medellin recuperados [2, 1, 2] MSE=0.084
     # Medellin Fallecidos [0, 0, 2] MSE=0.158
@@ -263,12 +252,27 @@ def main():
     # Cartagena recuperados [2, 0, 0] MSE=0.327
     # Cartagena fallecidos [2, 0, 0] MSE=0.788
 
-    response_col = arima_model_imp(df_norm_col, 0.8, [7, 15], [0, 0, 2], [0, 0, 2], [6, 1, 2])
+    response_col = arima_model_imp(df_norm_col, 0.8, [7, 30], [4, 0, 0], [3, 1, 0], [1, 1, 3])
+
     response_med = arima_model_imp(df_norm_medellin, 0.8, [7, 15], [4, 1, 2], [2, 1, 2], [0, 0, 2])
     response_bog = arima_model_imp(df_norm_bogota, 0.8, [7, 15], [0, 0, 2], [0, 0, 2], [6, 1, 2])
     response_cal = arima_model_imp(df_norm_cali, 0.8, [7, 15], [6, 1, 0], [2, 1, 4], [6, 1, 0])
     response_car = arima_model_imp(df_norm_cartagena, 0.8, [7, 15], [4, 0, 3], [2, 0, 0], [2, 0, 0])
     response_bar = arima_model_imp(df_norm_barranquilla, 0.8, [7, 15], [4, 0, 0], [2, 0, 0], [2, 0, 0])
+
+    last_real_val_casos_col = df_norm_col.tail(1)['c_caso'].values[0]
+    last_real_val_rec_col = df_norm_col.tail(1)['c_recuperado'].values[0]
+    last_real_val_fall_col = df_norm_col.tail(1)['c_fallecido'].values[0]
+
+    response_col['pronostico_casos']['corto_plazo_translate'] = translate_prediction(last_real_val_casos_col, response_col['pronostico_casos']['corto_plazo'])
+    response_col['pronostico_recuperados']['corto_plazo_translate'] = translate_prediction(last_real_val_rec_col, response_col['pronostico_recuperados']['corto_plazo'])
+    response_col['pronostico_fallecidos']['corto_plazo_translate'] = translate_prediction(last_real_val_fall_col, response_col['pronostico_fallecidos']['corto_plazo'])
+
+    response_col['pronostico_casos']['largo_plazo_translate'] = translate_prediction(last_real_val_casos_col, response_col['pronostico_casos']['largo_plazo'])
+    response_col['pronostico_recuperados']['largo_plazo_translate'] = translate_prediction(last_real_val_rec_col, response_col['pronostico_recuperados']['largo_plazo'])
+    response_col['pronostico_fallecidos']['largo_plazo_translate'] = translate_prediction(last_real_val_fall_col, response_col['pronostico_fallecidos']['largo_plazo'])
+
+
 
     # %%
 
